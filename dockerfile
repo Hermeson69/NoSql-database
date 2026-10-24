@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 FROM cassandra:5.0
 
 ENV CASSANDRA_CLUSTER_NAME="cluster" \

@@ -22,13 +22,15 @@ so clicar em query e rodar o comando sql abaixo para criar a tabela e inserir um
 
 ```bash
 CREATE TABLE IF NOT EXISTS app.users (
-    id uuid PRIMARY KEY,
-    name text,
-    email text,
-    created_at timestamp
+  id int PRIMARY KEY,
+  public_id uuid,
+  name text,
+  email text,
+  created_at timestamp
 );
 
-INSERT INTO app.users (id, name, email, created_at) VALUES (uuid(), 'Hermeson', 'hermeson@email.com', toTimestamp(now()));
+INSERT INTO app.users (id, public_id, name, email, created_at)
+VALUES (1, uuid(), 'Hermeson', 'hermeson@email.com', toTimestamp(now()));
 
 SELECT * FROM app.users;
 ```

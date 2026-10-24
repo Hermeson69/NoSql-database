@@ -2,15 +2,13 @@
 
 Cassandras 
 
-#### Comandos para ativar o Keyspace e criar a tabela:
-isso configura no global do cassandra o keyspace e a tabela para o projeto.
 
+### Query para criar o keyspace e a tabela:
+isso configura no global do cassandra o keyspace e a tabela para o projeto.
 
 ```bash
 docker compose exec cassandra cqlsh -u root -p root -e "DESCRIBE KEYSPACE app;"
 ```
-
-### Query para criar o keyspace e a tabela:
 
 extenssão a ser usada: ou usar o dbeaver-ce
 

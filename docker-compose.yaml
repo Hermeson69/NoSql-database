@@ -27,24 +27,5 @@ services:
       memlock: -1
     restart: unless-stopped
 
-  cassandra-init:
-    image: nosql-database-cassandra:5.0
-    depends_on:
-      cassandra:
-        condition: service_healthy
-    restart: "no"
-    environment:
-      APP_USERNAME: ${APP_USERNAME:-root}
-      APP_PASSWORD: ${APP_PASSWORD:-root}
-    entrypoint:
-      - bash
-      - -c
-      - |
-        until cqlsh cassandra -u cassandra -p cassandra -e "CREATE ROLE IF NOT EXISTS $$APP_USERNAME WITH PASSWORD = '$$APP_PASSWORD' AND SUPERUSER = true AND LOGIN = true;"; do
-          echo "aguardando cassandra..."; sleep 5
-        done
-        echo "usuário $$APP_USERNAME criado ou já existente."
-
-
 volumes:
   cassandra_data:

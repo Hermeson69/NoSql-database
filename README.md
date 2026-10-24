@@ -36,8 +36,9 @@ docker compose exec cassandra-node1 nodetool status
 
 ### 3. Acessar o Terminal CQL Interativo
 ```bash
-docker compose exec cassandra-node1 cqlsh -u cassandra -p cassandra
+docker compose exec cassandra-node1 cqlsh
 ```
+*(Para acessar o Nó 2: `docker compose exec cassandra-node2 cqlsh`)*
 
 ---
 
@@ -49,7 +50,7 @@ docker compose exec cassandra-node1 cqlsh -u cassandra -p cassandra
    ```
 2. Importe em lote com streaming nativo do Cassandra:
    ```bash
-   docker compose exec -T cassandra-node1 cqlsh -u cassandra -p cassandra -e "COPY telemetria.sensores_iot (sensor_id, data_leitura, timestamp, temperatura, umidade, tensao_bateria, status) FROM '/dados/dados_sensores.csv' WITH HEADER = TRUE;"
+   docker compose exec -T cassandra-node1 cqlsh -e "COPY telemetria.sensores_iot (sensor_id, data_leitura, timestamp, temperatura, umidade, tensao_bateria, status) FROM '/dados/dados_sensores.csv' WITH HEADER = TRUE;"
    ```
 3. Consulte com rastreamento da árvore de execução:
    ```sql

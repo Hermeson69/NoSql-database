@@ -4,9 +4,6 @@
 -- Fator de Replicação: 2 (distribuído entre cassandra-node1 e cassandra-node2)
 -- ==============================================================================
 
--- 1. Criação do Usuário/Role root (para compatibilidade com ferramentas visuais e README):
--- Executado com segurança caso PasswordAuthenticator esteja ativo
-CREATE ROLE IF NOT EXISTS root WITH PASSWORD = 'root' AND SUPERUSER = true AND LOGIN = true;
 
 -- 2. Criação do Keyspace de Telemetria com Replicação em 2 nós:
 CREATE KEYSPACE IF NOT EXISTS telemetria 

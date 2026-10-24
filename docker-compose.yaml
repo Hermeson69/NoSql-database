@@ -83,12 +83,12 @@ services:
       - -c
       - |
         echo "Aguardando cassandra-node1 estar pronto para carregar schemas..."
-        until cqlsh cassandra-node1 9042 -u cassandra -p cassandra -f /init/01_schema.cql; do
+        until cqlsh cassandra-node1 9042 -f /init/01_schema.cql; do
           echo "Tentando aplicar 01_schema.cql..."
           sleep 5
         done
         echo "01_schema.cql aplicado com sucesso!"
-        cqlsh cassandra-node1 9042 -u cassandra -p cassandra -f /init/02_seed.cql || true
+        cqlsh cassandra-node1 9042 -f /init/02_seed.cql || true
         echo "02_seed.cql aplicado com sucesso!"
         echo "Cluster NoSQL pronto para uso!"
 

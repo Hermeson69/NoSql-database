@@ -1,31 +1,97 @@
 services:
-  cassandra:
+  cassandra-node1:
     build:
       context: .
       dockerfile: dockerfile
     image: nosql-database-cassandra:5.0
+    container_name: cassandra-node1
+    hostname: cassandra-node1
     ports:
       - "9042:9042"
     environment:
+      CASSANDRA_CLUSTER_NAME: "NoSQLCluster"
+      CASSANDRA_DC: "dc1"
+      CASSANDRA_RACK: "rack1"
+      CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
+      CASSANDRA_SEEDS: "cassandra-node1"
       CASSANDRA_AUTHENTICATOR: PasswordAuthenticator
       CASSANDRA_AUTHORIZER: CassandraAuthorizer
+      MAX_HEAP_SIZE: "768M"
+      HEAP_NEWSIZE: "192M"
     volumes:
-      - cassandra_data:/var/lib/cassandra
+      - node1_data:/var/lib/cassandra
+      - ./dados:/dados:ro
     healthcheck:
       test:
         [
           "CMD-SHELL",
           "cqlsh -u cassandra -p cassandra localhost 9042 -e 'SELECT cluster_name FROM system.local' >/dev/null 2>&1",
         ]
-      interval: 30s
+      interval: 20s
       timeout: 10s
-      start_period: 90s
+      start_period: 60s
       retries: 5
-    mem_limit: 2g
-    ulimits:
-      nofile: 100000
-      memlock: -1
+    mem_limit: 1500m
     restart: unless-stopped
 
+  cassandra-node2:
+    image: nosql-database-cassandra:5.0
+    container_name: cassandra-node2
+    hostname: cassandra-node2
+    ports:
+      - "9043:9042"
+    depends_on:
+      cassandra-node1:
+        condition: service_healthy
+    environment:
+      CASSANDRA_CLUSTER_NAME: "NoSQLCluster"
+      CASSANDRA_DC: "dc1"
+      CASSANDRA_RACK: "rack1"
+      CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
+      CASSANDRA_SEEDS: "cassandra-node1"
+      CASSANDRA_AUTHENTICATOR: PasswordAuthenticator
+      CASSANDRA_AUTHORIZER: CassandraAuthorizer
+      MAX_HEAP_SIZE: "768M"
+      HEAP_NEWSIZE: "192M"
+    volumes:
+      - node2_data:/var/lib/cassandra
+      - ./dados:/dados:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "cqlsh -u cassandra -p cassandra localhost 9042 -e 'SELECT cluster_name FROM system.local' >/dev/null 2>&1",
+        ]
+      interval: 20s
+      timeout: 10s
+      start_period: 60s
+      retries: 5
+    mem_limit: 1500m
+    restart: unless-stopped
+
+  cassandra-init:
+    image: nosql-database-cassandra:5.0
+    container_name: cassandra-init
+    depends_on:
+      cassandra-node1:
+        condition: service_healthy
+    restart: "no"
+    volumes:
+      - ./init:/init:ro
+    entrypoint:
+      - bash
+      - -c
+      - |
+        echo "Aguardando cassandra-node1 estar pronto para carregar schemas..."
+        until cqlsh cassandra-node1 9042 -u cassandra -p cassandra -f /init/01_schema.cql; do
+          echo "Tentando aplicar 01_schema.cql..."
+          sleep 5
+        done
+        echo "01_schema.cql aplicado com sucesso!"
+        cqlsh cassandra-node1 9042 -u cassandra -p cassandra -f /init/02_seed.cql || true
+        echo "02_seed.cql aplicado com sucesso!"
+        echo "Cluster NoSQL pronto para uso!"
+
 volumes:
-  cassandra_data:
+  node1_data:
+  node2_data:

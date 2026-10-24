@@ -1,1 +1,5 @@
 .env
+dados/*.csv
+__pycache__/
+*.pyc
+cerebro/

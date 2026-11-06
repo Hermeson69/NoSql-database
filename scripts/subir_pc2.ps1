@@ -1,12 +1,61 @@
 # ==============================================================================
 # scripts/subir_pc2.ps1
 # Automacao para inicializar a Maquina 2 (Secundaria) no WINDOWS (PowerShell)
+# Uso normal: .\scripts\subir_pc2.ps1
+# Checar status a qualquer momento: .\scripts\subir_pc2.ps1 -Status
 # ==============================================================================
 
 param (
     [string]$SeedIP = "26.96.137.160",
-    [string]$MyIP = "26.42.12.45"
+    [string]$MyIP = "26.42.12.45",
+    [switch]$Status = $false
 )
+
+function Exibir-DiagnosticoCluster {
+    Write-Host "`n==========================================================" -ForegroundColor Cyan
+    Write-Host "                  STATUS DO CLUSTER                       " -ForegroundColor Cyan
+    Write-Host "==========================================================" -ForegroundColor Cyan
+
+    $statusOutput = docker exec cassandra-node2 nodetool status 2>&1
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERRO] Container cassandra-node2 nao esta respondendo." -ForegroundColor Red
+        return
+    }
+
+    Write-Host "`nTabela do nodetool status:" -ForegroundColor DarkGray
+    $statusOutput | ForEach-Object {
+        if ($_ -match "^UN\s+") {
+            Write-Host "  $_" -ForegroundColor Green
+        } elseif ($_ -match "^(D|U)(J|L|M|D)\s+") {
+            Write-Host "  $_" -ForegroundColor Yellow
+        } else {
+            Write-Host "  $_" -ForegroundColor Gray
+        }
+    }
+
+    $nosUN = @($statusOutput | Where-Object { $_ -match "^UN\s+" })
+
+    Write-Host "`n----------------------------------------------------------" -ForegroundColor DarkCyan
+    if ($nosUN.Count -ge 2) {
+        Write-Host " [OK] SUCESSO TOTAL! AS 2 MAQUINAS ESTAO 100% CONECTADAS! " -ForegroundColor Black -BackgroundColor Green
+        Write-Host "`n -> Maquinas no anel: $($nosUN.Count) computadores fisicos" -ForegroundColor Green
+        Write-Host " -> Status: UN (Up / Normal) em ambos os computadores." -ForegroundColor Green
+        Write-Host " -> Replicacao RF=2: Totalmente ativa e sincronizada!" -ForegroundColor Green
+    } elseif ($nosUN.Count -eq 1) {
+        Write-Host " [AGUARDANDO] Apenas 1 maquina ativa no anel.             " -ForegroundColor Black -BackgroundColor Yellow
+        Write-Host "`n -> Aguardando sincronizacao com o Seed (PC 1)." -ForegroundColor Yellow
+    } else {
+        Write-Host " [ATENCAO] Nenhum no com status UN detectado." -ForegroundColor Red
+    }
+    Write-Host "----------------------------------------------------------" -ForegroundColor DarkCyan
+}
+
+# Se o usuário só pediu para checar o status:
+if ($Status) {
+    Exibir-DiagnosticoCluster
+    exit 0
+}
 
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "   INICIALIZANDO CLUSTER CASSANDRA - MAQUINA 2 (WINDOWS)  " -ForegroundColor Cyan
@@ -54,11 +103,10 @@ if (-not $pronto) {
     exit 1
 }
 
-Write-Host "`n==========================================================" -ForegroundColor Cyan
-Write-Host "                  STATUS ATUAL DO CLUSTER                 " -ForegroundColor Cyan
-Write-Host "==========================================================" -ForegroundColor Cyan
-docker exec -it cassandra-node2 nodetool status
+# Exibição Final
+Exibir-DiagnosticoCluster
 
 Write-Host "`nTUDO PRONTO NO PC 2! Para consultar a tabela replicada:" -ForegroundColor Yellow
 Write-Host "docker exec -it cassandra-node2 cqlsh localhost 9042 -e 'USE telemetria; SELECT * FROM sensores_iot LIMIT 5;'" -ForegroundColor White
-
+Write-Host "`nPara rechecar o status do anel a qualquer momento, basta rodar:" -ForegroundColor Yellow
+Write-Host ".\scripts\subir_pc2.ps1 -Status" -ForegroundColor White

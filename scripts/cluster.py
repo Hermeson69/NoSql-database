@@ -105,7 +105,7 @@ def container_ativo():
     return next((c for c in ["cassandra-node1", "cassandra-node2"] if c in names), None)
 
 
-def wait_cassandra(container: str, timeout: int = 120) -> bool:
+def wait_cassandra(container: str, timeout: int = 3600) -> bool:
     print(f"\n{C_YELLOW}[] Aguardando JVM do Cassandra inicializar (~35-60s)...{C_RESET}")
     start = time.time()
     try:
@@ -182,11 +182,13 @@ def verificar_conexao(container: str = None, silent: bool = False):
 def start_node(name: str, my_ip: str, seed_ip: str, mount: bool = False) -> bool:
     run_cmd(f"docker rm -f {name}")
     v = f'-v "{DADOS_DIR.as_posix()}:/dados"' if mount else ""
+    # Se nao for o proprio seed, instrui o Cassandra a substituir qualquer sessao antiga com o mesmo IP
+    jvm_replace = f'-e JVM_OPTS="-Dcassandra.replace_address_first_boot={my_ip}"' if my_ip != seed_ip else ""
     cmd = (
         f'docker run -d --name {name} -p 7000:7000 -p 9042:9042 '
         f'-e CASSANDRA_CLUSTER_NAME="NoSQLCluster" -e CASSANDRA_DC="dc1" -e CASSANDRA_RACK="rack1" '
         f'-e CASSANDRA_ENDPOINT_SNITCH="GossipingPropertyFileSnitch" -e CASSANDRA_BROADCAST_ADDRESS="{my_ip}" '
-        f'-e CASSANDRA_BROADCAST_RPC_ADDRESS="{my_ip}" -e CASSANDRA_SEEDS="{seed_ip}" '
+        f'-e CASSANDRA_BROADCAST_RPC_ADDRESS="{my_ip}" -e CASSANDRA_SEEDS="{seed_ip}" {jvm_replace} '
         f'-e MAX_HEAP_SIZE="768M" -e HEAP_NEWSIZE="192M" {v} cassandra:5.0'
     )
     return run_cmd(cmd)[0] == 0

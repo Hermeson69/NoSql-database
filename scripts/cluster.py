@@ -89,10 +89,10 @@ def obter_ip(fornecido=None, label="desta máquina"):
     if not ips:
         return input(f"Informe o IP {label} [{DEFAULT_SEED_IP}]: ").strip() or DEFAULT_SEED_IP
     if len(ips) == 1:
-        print(f"{C_GREEN}[🌐] IP detectado: {C_BOLD}{ips[0][0]}{C_RESET} ({ips[0][1]})")
+        print(f"{C_GREEN}[] IP detectado: {C_BOLD}{ips[0][0]}{C_RESET} ({ips[0][1]})")
         return ips[0][0]
 
-    print(f"\n{C_CYAN}[🌐] IPs detectados {label}:{C_RESET}")
+    print(f"\n{C_CYAN}[] IPs detectados {label}:{C_RESET}")
     for i, (ip, tag) in enumerate(ips, 1):
         rec = f" {C_GREEN}[Recomendado]{C_RESET}" if i == 1 else ""
         print(f"  [{i}] {ip} ({tag}){rec}")
@@ -106,13 +106,13 @@ def container_ativo():
 
 
 def wait_cassandra(container: str, timeout: int = 120) -> bool:
-    print(f"\n{C_YELLOW}[⏳] Aguardando JVM do Cassandra inicializar (~35-60s)...{C_RESET}")
+    print(f"\n{C_YELLOW}[] Aguardando JVM do Cassandra inicializar (~35-60s)...{C_RESET}")
     start = time.time()
     try:
         while time.time() - start < timeout:
             time.sleep(4)
             if run_cmd(f'docker exec {container} cqlsh localhost 9042 -e "SELECT cluster_name FROM system.local"')[0] == 0:
-                print(f"{C_GREEN}[✔] Cassandra ONLINE e pronto ({int(time.time() - start)}s)!{C_RESET}")
+                print(f"{C_GREEN}[[OK]] Cassandra ONLINE e pronto ({int(time.time() - start)}s)!{C_RESET}")
                 return True
             print(f"{C_GRAY}  -> Verificando porta 9042...{C_RESET}")
     except KeyboardInterrupt:
@@ -134,7 +134,7 @@ def carregar_banco(container: str = "cassandra-node1"):
             shell=True,
             capture_output=True
         )
-        print(f"{C_GREEN}[✔] {desc} aplicado com sucesso!{C_RESET}" if res.returncode == 0 else f"{C_RED}[ERRO] Falha no CQL: {res.stderr or res.stdout}{C_RESET}")
+        print(f"{C_GREEN}[[OK]] {desc} aplicado com sucesso!{C_RESET}" if res.returncode == 0 else f"{C_RED}[ERRO] Falha no CQL: {res.stderr or res.stdout}{C_RESET}")
 
     csv_file = DADOS_DIR / "dados_sensores.csv"
     if not csv_file.exists():
@@ -145,7 +145,7 @@ def carregar_banco(container: str = "cassandra-node1"):
     t0 = time.time()
     copy_cmd = "COPY telemetria.sensores_iot (sensor_id, data_leitura, timestamp, temperatura, umidade, tensao_bateria, status) FROM '/dados/dados_sensores.csv' WITH HEADER = TRUE;"
     code, _, err = run_cmd(f'docker exec -i {container} cqlsh localhost 9042 -e "{copy_cmd}"')
-    print(f"{C_GREEN}[✔] 50.000 registros importados em {round(time.time() - t0, 2)}s!{C_RESET}" if code == 0 else f"{C_YELLOW}[AVISO] COPY: {err}{C_RESET}")
+    print(f"{C_GREEN}[[OK]] 50.000 registros importados em {round(time.time() - t0, 2)}s!{C_RESET}" if code == 0 else f"{C_YELLOW}[AVISO] COPY: {err}{C_RESET}")
 
 
 def verificar_conexao(container: str = None, silent: bool = False):
@@ -202,7 +202,7 @@ def subir_pc1(my_ip=None, wait_pc2: bool = True):
     carregar_banco("cassandra-node1")
 
     if wait_pc2:
-        print(f"\n{C_YELLOW}[🤝] Aguardando o PC 2 se juntar ao anel (Ctrl+C para pular)...{C_RESET}")
+        print(f"\n{C_YELLOW}[] Aguardando o PC 2 se juntar ao anel (Ctrl+C para pular)...{C_RESET}")
         start = time.time()
         try:
             while time.time() - start < 90:
@@ -240,7 +240,7 @@ def subir_local():
 def limpar():
     print(f"{C_YELLOW}Removendo containers...{C_RESET}")
     run_cmd("docker rm -f cassandra-node1 cassandra-node2; docker compose down -v")
-    print(f"{C_GREEN}[✔] Limpeza concluída com sucesso!{C_RESET}")
+    print(f"{C_GREEN}[[OK]] Limpeza concluída com sucesso!{C_RESET}")
 
 
 def menu():

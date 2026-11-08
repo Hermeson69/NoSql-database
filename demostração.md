@@ -22,17 +22,16 @@ Roteiro completo de demonstração estruturado diretamente a partir dos requisit
 O ecossistema do Cassandra oferece três interfaces de acesso:
 
 1. **Interface de Linha de Comando Nativa (`cqlsh`):**
-   Acesso direto via protocolo binário nativo (porta `9042`):
    ```bash
    docker exec -it cassandra-node1 cqlsh localhost 9042
    ```
-   *(No Modo B, executado no Computador 2 apontando para `cassandra-node2`).*
+   *O que este comando faz: Abre o terminal interativo do Cassandra via protocolo binário nativo (porta 9042) para executar consultas CQL diretamente. No Modo B, use `cassandra-node2`.*
 
 2. **Interface Administrativa do Nó (`nodetool`):**
-   Utilitário administrativo oficial para monitorar o anel de tokens, taxas de compressão e uso de memória:
    ```bash
    docker exec -it cassandra-node1 nodetool info
    ```
+   *O que este comando faz: Exibe métricas de infraestrutura do nó, como tempo em atividade (uptime), uso de memória heap da JVM, ID do host e taxas de carga.*
 
 3. **Interface Gráfica Visual (Extensão CQL no VS Code / DBeaver):**
    Conexão JDBC/CQL configurada em `localhost:9042` com os Keyspaces `telemetria` e `app`, permitindo navegação estrutural das tabelas e execução visual de scripts.
@@ -45,17 +44,20 @@ Acesse o terminal do Cassandra:
 ```bash
 docker exec -it cassandra-node1 cqlsh localhost 9042
 ```
-*(Ou no nó 2: `docker exec -it cassandra-node2 cqlsh localhost 9042`).*
+*O que este comando faz: Conecta no console interativo CQL do container para permitir a digitação de queries.*
 
 ### 2.1 Apresentação do Esquema de Dados (Modelagem NoSQL de Telemetria)
-Dentro do `cqlsh`, selecione o keyspace e exiba o DDL da tabela:
+Dentro do `cqlsh`, execute o comando abaixo para visualizar a estrutura completa da tabela:
 
 ```sql
 USE telemetria;
 DESCRIBE TABLE sensores_iot;
 ```
+*O que este comando faz: O `USE telemetria;` seleciona o banco/keyspace do projeto. O `DESCRIBE TABLE sensores_iot;` pede para o Cassandra imprimir na tela o código DDL completo com todas as colunas, chaves primárias e propriedades da tabela.*
 
-**Estrutura da Tabela:**
+> **Atenção:** O único comando que você digita no terminal é `DESCRIBE TABLE sensores_iot;`. O bloco abaixo é o que o próprio Cassandra vai imprimir na tela como resultado. Não tente digitar "PRIMARY KEY" solto no terminal.
+
+**Saída exibida na tela pelo Cassandra:**
 ```sql
 CREATE TABLE telemetria.sensores_iot (
     sensor_id text,
@@ -68,16 +70,18 @@ CREATE TABLE telemetria.sensores_iot (
     PRIMARY KEY ((sensor_id, data_leitura), timestamp)
 ) WITH CLUSTERING ORDER BY (timestamp DESC);
 ```
+*Descrição técnica do código DDL: Define o esquema da tabela no keyspace telemetria. Contém colunas de texto (identificador do sensor e status operacional), data e horário exato (data_leitura e timestamp) e valores numéricos em ponto flutuante (temperatura em graus, umidade relativa e tensão da bateria em volts). A cláusula WITH CLUSTERING ORDER BY instrui o motor de gravação das SSTables a manter as linhas de cada partição já ordenadas fisicamente por horário decrescente direto no arquivo de dados.*
 
-**Conceitos Fundamentais da Modelagem a Explicar:**
-* **Chave de Partição Composta `(sensor_id, data_leitura)`:** Define a distribuição física dos dados no anel. O hash Murmur3 é calculado sobre essas duas colunas, garantindo que todas as leituras de um mesmo sensor em determinado dia fiquem alocadas no mesmo nó sem espalhar I/O.
-* **Chave de Clusterização `timestamp DESC`:** Ordena as linhas dentro da partição fisicamente no disco em ordem cronológica decrescente.
+**O que você deve apontar e explicar na tela para o professor:**
+* **Chave de Partição `(sensor_id, data_leitura)`:** Aponte para essa parte e explique que ela define a distribuição física dos dados no anel. O hash Murmur3 é calculado sobre essas duas colunas para alocar o dado no nó certo.
+* **Chave de Clusterização `timestamp DESC`:** Aponte para o timestamp e explique que ele ordena as linhas dentro da partição fisicamente no disco em ordem cronológica decrescente.
 
 ### 2.2 Consulta Simples de Amostra
 Recuperação das leituras mais recentes registradas:
 ```sql
 SELECT * FROM telemetria.sensores_iot LIMIT 5;
 ```
+*O que este comando faz: Busca e retorna as 5 primeiras linhas gravadas na tabela com todas as suas colunas (temperatura, umidade, status, etc.).*
 
 ---
 
@@ -88,21 +92,21 @@ Caso o arquivo de dados precise ser regerado, execute no terminal do host:
 ```bash
 python scripts/gerar_dados_massa.py
 ```
-*O script produz 50.000 medições realistas de IoT distribuídas em 35 sensores no arquivo `dados/dados_sensores.csv` em cerca de 2 segundos.*
+*O que este comando faz: Roda o gerador em Python para criar o arquivo CSV estruturado com 50.000 medições realistas de IoT distribuídas em 35 sensores.*
 
 ### Passo 2: Ingestão de Alta Performance com Comando Nativo `COPY`
 Importe os 50.000 registros com streaming em lote:
 ```bash
 docker exec -i cassandra-node1 cqlsh localhost 9042 -e "COPY telemetria.sensores_iot (sensor_id, data_leitura, timestamp, temperatura, umidade, tensao_bateria, status) FROM '/dados/dados_sensores.csv' WITH HEADER = TRUE;"
 ```
-*Tempo de ingestão: 50.000 registros importados em aproximadamente 10 segundos.*
+*O que este comando faz: Aciona o mecanismo nativo de streaming de alta velocidade do Cassandra para ler o CSV e gravar as 50.000 linhas no cluster em cerca de 10 segundos.*
 
 ### Passo 3: Comprovação do Volume na Tabela
 No terminal `cqlsh`:
 ```sql
 SELECT COUNT(*) FROM telemetria.sensores_iot;
 ```
-*Resultado comprovado: ~50.000 registros.*
+*O que este comando faz: Realiza a contagem agregada de registros no cluster para comprovar que os 50.000 dados estão armazenados.*
 
 ### Passo 4: Consulta Otimizada por Partição com Alto Volume
 Demonstração de busca pontual de alta performance mesmo com 50.000 registros:
@@ -112,6 +116,7 @@ FROM telemetria.sensores_iot
 WHERE sensor_id = 'SENSOR-SP-001' AND data_leitura = '2026-10-24' 
 LIMIT 5;
 ```
+*O que este comando faz: Busca registros filtrando diretamente pela Chave de Partição exata. O Cassandra calcula o token hash e vai direto no local físico correto sem fazer varredura desnecessária.*
 
 ---
 
@@ -125,6 +130,7 @@ No prompt do `cqlsh`:
 USE telemetria;
 TRACING ON;
 ```
+*O que este comando faz: Liga o rastreador de performance da sessão, fazendo com que qualquer consulta posterior exiba seu plano detalhado de execução interna.*
 
 ### 3.2 Execução da Consulta com Análise de Rastreamento
 ```sql
@@ -132,6 +138,7 @@ SELECT * FROM telemetria.sensores_iot
 WHERE sensor_id = 'SENSOR-SP-001' AND data_leitura = '2026-10-24' 
 LIMIT 5;
 ```
+*O que este comando faz: Executa o SELECT e imprime, logo abaixo do resultado, a árvore de rastreamento com cada microetapa interna em microssegundos.*
 
 ### 3.3 Eventos da Árvore de Execução a Explicar na Tela:
 A saída exibirá o bloco `Tracing session` com as etapas internas em microssegundos:
@@ -145,6 +152,7 @@ Para desligar o rastreamento após a demonstração:
 ```sql
 TRACING OFF;
 ```
+*O que este comando faz: Desativa o rastreamento detalhado para retornar ao modo de exibição normal do terminal.*
 
 ---
 
@@ -157,21 +165,20 @@ Executado na raiz do projeto com portas dedicadas e comunicação real via Gossi
 ```bash
 docker compose up -d --build
 ```
-* O `cassandra-node1` sobe na porta `9042` (IP virtual `172.20.0.2`).
-* O `cassandra-node2` sobe na porta `9043` (IP virtual `172.20.0.3`).
-* O `cassandra-init` aplica o schema e o seed com fator de replicação 2.
+*O que este comando faz: Constrói a imagem local, sobe os nós 1 e 2 em rede interna isolada do Docker e executa a carga automática de schemas sem depender de redes externas.*
 
 #### Modo B: Dois Computadores Físicos Reais (Laboratório / Wi-Fi / Radmin VPN)
 * **Computador 1 (Máquina Seed - Nó 1):**
   ```powershell
   docker run -d --name cassandra-node1 -p 7000:7000 -p 9042:9042 -e CASSANDRA_CLUSTER_NAME="NoSQLCluster" -e CASSANDRA_DC="dc1" -e CASSANDRA_RACK="rack1" -e CASSANDRA_ENDPOINT_SNITCH="GossipingPropertyFileSnitch" -e CASSANDRA_BROADCAST_ADDRESS=IP_PC1 -e CASSANDRA_BROADCAST_RPC_ADDRESS=IP_PC1 -e CASSANDRA_SEEDS=IP_PC1 -e MAX_HEAP_SIZE="768M" -e HEAP_NEWSIZE="192M" -v ${PWD}/dados:/dados cassandra:5.0
   ```
+  *O que este comando faz: Inicia o nó 1 como Seed Node no Windows, expondo a porta de Gossip 7000 e a porta CQL 9042 no IP de rede local ou Radmin.*
+
 * **Computador 2 (Máquina Secundária - Nó 2):**
-  Executado pelo script com substituição de sessão automática:
   ```bash
   python3 scripts/cluster.py
   ```
-  *(Opção 2 - Máquina 2).*
+  *O que este comando faz: Executa o script interativo que detecta os IPs automaticamente, adiciona o parâmetro anti-colisão e sobe o nó 2 conectando ao PC 1.*
 
 ---
 
@@ -181,6 +188,8 @@ Em qualquer uma das máquinas, execute no terminal:
 docker exec -it cassandra-node1 nodetool status
 ```
 *(ou `docker exec -it cassandra-node2 nodetool status` no Computador 2)*.
+
+*O que este comando faz: Consulta o Gossiper interno do Cassandra e exibe a tabela de nós participantes do anel, com seus endereços IP, estado de conexão, carga e posse de tokens.*
 
 **Saída Esperada no Terminal:**
 ```text
@@ -201,26 +210,30 @@ UN  10.215.120.142  119.85 KiB  16      100.0%            e0811b3b-ba9c-42b6-ad7
    ```bash
    docker exec -it cassandra-node2 cqlsh localhost 9042 -e "SELECT count(*) FROM telemetria.sensores_iot;"
    ```
-   *Comprova a sincronização e replicação em tempo real entre máquinas distintas.*
+   *O que este comando faz: Executa uma consulta direta no segundo computador provando que os dados inseridos no computador 1 foram sincronizados via rede pelo fator de replicação 2.*
 
 ### 4.4 Teste de Tolerância a Falhas (Alta Disponibilidade ao Vivo)
 1. Com o cluster em operação, derrube propositalmente o segundo nó:
    ```bash
    docker stop cassandra-node2
    ```
+   *O que este comando faz: Simula a queda abrupta de um computador/servidor do cluster.*
+
 2. No Computador 1, consulte o status com `nodetool status`:
    * `cassandra-node1` permanece `UN` (Up / Normal).
    * `cassandra-node2` passa para `DN` (Down / Normal).
+
 3. Execute consultas no Nó 1 sobrevivente:
    ```bash
    docker exec -it cassandra-node1 cqlsh localhost 9042 -e "SELECT * FROM telemetria.sensores_iot LIMIT 5;"
    ```
-   *A consulta responde perfeitamente, comprovando a ausência de ponto único de falha (Single Point of Failure).*
+   *O que este comando faz: Comprova que o cluster continua operando e respondendo sem indisponibilidade (Zero Single Point of Failure).*
+
 4. Religue o nó secundário:
    ```bash
    docker start cassandra-node2
    ```
-   *Em segundos, o nó reconecta ao anel e sincroniza novamente sem intervenção manual.*
+   *O que este comando faz: Liga o nó novamente; o Cassandra sincroniza as mensagens pendentes (Hints) automaticamente e restabelece o anel.*
 
 ---
 
@@ -230,4 +243,6 @@ Para desligar os containers e liberar as portas:
 ```bash
 docker rm -f cassandra-node1 cassandra-node2
 ```
-*(Ou se executou via Docker Compose: `docker compose down -v`).*
+*O que este comando faz: Remove à força os containers criados manualmente para liberar as portas 7000 e 9042.*
+
+*(Ou se executou via Docker Compose: `docker compose down -v`)*.

@@ -3,12 +3,14 @@
 ==============================================================================
 scripts/cluster.py
 Gerenciador Unificado do Cluster Apache Cassandra (Windows & Linux)
-Executa todas as etapas com IDENTIFICAÇÃO AUTOMÁTICA DE IP:
+Executa todas as etapas com IDENTIFICAÇÃO AUTOMÁTICA DE IP E PROTEÇÃO DE REDE:
+  - Configuração automática de Firewall no Windows (Portas 7000 e 9042)
+  - Pré-teste de conectividade do Seed antes de subir o Nó 2 (evita queda)
   - Subir Máquina 1 (Seed Node)
   - Subir Máquina 2 (Secundária)
   - Subir Cluster Local (2 nós na mesma máquina)
   - Carregar esquemas e 50.000 registros
-  - Verificar conexão e saúde do anel de nós
+  - Diagnóstico automático com captura de logs em caso de queda
 Compatível 100% com Windows, Linux e macOS (requer apenas Python 3.8+).
 ==============================================================================
 """
@@ -53,6 +55,27 @@ def check_docker() -> bool:
     return True
 
 
+def liberar_firewall_windows():
+    """Garante que as regras de firewall para as portas 7000 e 9042 existam em todos os perfis."""
+    if platform.system() != "Windows":
+        return
+    fw_cmd = (
+        'powershell -Command "'
+        'New-NetFirewallRule -DisplayName \'Cassandra-Gossip-7000\' -Direction Inbound -LocalPort 7000 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null; '
+        'New-NetFirewallRule -DisplayName \'Cassandra-CQL-9042\' -Direction Inbound -LocalPort 9042 -Protocol TCP -Action Allow -Profile Any -ErrorAction SilentlyContinue | Out-Null"'
+    )
+    run_cmd(fw_cmd)
+
+
+def testar_porta_tcp(host: str, port: int, timeout: float = 2.0) -> bool:
+    """Verifica se um endereço e porta TCP estão acessíveis."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
 def detectar_ips():
     ips = []
     try:
@@ -89,10 +112,10 @@ def obter_ip(fornecido=None, label="desta máquina"):
     if not ips:
         return input(f"Informe o IP {label} [{DEFAULT_SEED_IP}]: ").strip() or DEFAULT_SEED_IP
     if len(ips) == 1:
-        print(f"{C_GREEN}[] IP detectado: {C_BOLD}{ips[0][0]}{C_RESET} ({ips[0][1]})")
+        print(f"{C_GREEN}[🌐] IP detectado: {C_BOLD}{ips[0][0]}{C_RESET} ({ips[0][1]})")
         return ips[0][0]
 
-    print(f"\n{C_CYAN}[] IPs detectados {label}:{C_RESET}")
+    print(f"\n{C_CYAN}[🌐] IPs detectados {label}:{C_RESET}")
     for i, (ip, tag) in enumerate(ips, 1):
         rec = f" {C_GREEN}[Recomendado]{C_RESET}" if i == 1 else ""
         print(f"  [{i}] {ip} ({tag}){rec}")
@@ -100,19 +123,30 @@ def obter_ip(fornecido=None, label="desta máquina"):
     return ips[int(opt) - 1][0] if opt.isdigit() and 1 <= int(opt) <= len(ips) else opt if "." in opt else ips[0][0]
 
 
+def is_container_running(name: str) -> bool:
+    return name in run_cmd(f'docker ps --filter "name={name}" --format "{{{{.Names}}}}"')[1].split()
+
+
 def container_ativo():
     names = run_cmd('docker ps --format "{{.Names}}"')[1].split()
     return next((c for c in ["cassandra-node1", "cassandra-node2"] if c in names), None)
 
 
-def wait_cassandra(container: str, timeout: int = 3600) -> bool:
-    print(f"\n{C_YELLOW}[] Aguardando JVM do Cassandra inicializar (~35-60s)...{C_RESET}")
+def wait_cassandra(container: str, timeout: int = 120) -> bool:
+    print(f"\n{C_YELLOW}[⏳] Aguardando JVM do Cassandra inicializar (~35-60s)...{C_RESET}")
     start = time.time()
     try:
         while time.time() - start < timeout:
             time.sleep(4)
+            # Verifica se o container caiu antes de responder
+            if not is_container_running(container):
+                print(f"\n{C_RED}[ERRO CRÍTICO] O container {container} parou inesperadamente!{C_RESET}")
+                _, logs, _ = run_cmd(f"docker logs --tail 15 {container}")
+                print(f"{C_YELLOW}Últimos logs do container:\n{logs.strip()}{C_RESET}")
+                return False
+
             if run_cmd(f'docker exec {container} cqlsh localhost 9042 -e "SELECT cluster_name FROM system.local"')[0] == 0:
-                print(f"{C_GREEN}[[OK]] Cassandra ONLINE e pronto ({int(time.time() - start)}s)!{C_RESET}")
+                print(f"{C_GREEN}[✔] Cassandra ONLINE e pronto ({int(time.time() - start)}s)!{C_RESET}")
                 return True
             print(f"{C_GRAY}  -> Verificando porta 9042...{C_RESET}")
     except KeyboardInterrupt:
@@ -134,7 +168,7 @@ def carregar_banco(container: str = "cassandra-node1"):
             shell=True,
             capture_output=True
         )
-        print(f"{C_GREEN}[[OK]] {desc} aplicado com sucesso!{C_RESET}" if res.returncode == 0 else f"{C_RED}[ERRO] Falha no CQL: {res.stderr or res.stdout}{C_RESET}")
+        print(f"{C_GREEN}[✔] {desc} aplicado com sucesso!{C_RESET}" if res.returncode == 0 else f"{C_RED}[ERRO] Falha no CQL: {res.stderr or res.stdout}{C_RESET}")
 
     csv_file = DADOS_DIR / "dados_sensores.csv"
     if not csv_file.exists():
@@ -145,7 +179,7 @@ def carregar_banco(container: str = "cassandra-node1"):
     t0 = time.time()
     copy_cmd = "COPY telemetria.sensores_iot (sensor_id, data_leitura, timestamp, temperatura, umidade, tensao_bateria, status) FROM '/dados/dados_sensores.csv' WITH HEADER = TRUE;"
     code, _, err = run_cmd(f'docker exec -i {container} cqlsh localhost 9042 -e "{copy_cmd}"')
-    print(f"{C_GREEN}[[OK]] 50.000 registros importados em {round(time.time() - t0, 2)}s!{C_RESET}" if code == 0 else f"{C_YELLOW}[AVISO] COPY: {err}{C_RESET}")
+    print(f"{C_GREEN}[✔] 50.000 registros importados em {round(time.time() - t0, 2)}s!{C_RESET}" if code == 0 else f"{C_YELLOW}[AVISO] COPY: {err}{C_RESET}")
 
 
 def verificar_conexao(container: str = None, silent: bool = False):
@@ -182,13 +216,11 @@ def verificar_conexao(container: str = None, silent: bool = False):
 def start_node(name: str, my_ip: str, seed_ip: str, mount: bool = False) -> bool:
     run_cmd(f"docker rm -f {name}")
     v = f'-v "{DADOS_DIR.as_posix()}:/dados"' if mount else ""
-    # Se nao for o proprio seed, instrui o Cassandra a substituir qualquer sessao antiga com o mesmo IP
-    jvm_replace = f'-e JVM_OPTS="-Dcassandra.replace_address_first_boot={my_ip}"' if my_ip != seed_ip else ""
     cmd = (
         f'docker run -d --name {name} -p 7000:7000 -p 9042:9042 '
         f'-e CASSANDRA_CLUSTER_NAME="NoSQLCluster" -e CASSANDRA_DC="dc1" -e CASSANDRA_RACK="rack1" '
         f'-e CASSANDRA_ENDPOINT_SNITCH="GossipingPropertyFileSnitch" -e CASSANDRA_BROADCAST_ADDRESS="{my_ip}" '
-        f'-e CASSANDRA_BROADCAST_RPC_ADDRESS="{my_ip}" -e CASSANDRA_SEEDS="{seed_ip}" {jvm_replace} '
+        f'-e CASSANDRA_BROADCAST_RPC_ADDRESS="{my_ip}" -e CASSANDRA_SEEDS="{seed_ip}" '
         f'-e MAX_HEAP_SIZE="768M" -e HEAP_NEWSIZE="192M" {v} cassandra:5.0'
     )
     return run_cmd(cmd)[0] == 0
@@ -197,6 +229,7 @@ def start_node(name: str, my_ip: str, seed_ip: str, mount: bool = False) -> bool
 def subir_pc1(my_ip=None, wait_pc2: bool = True):
     if not check_docker():
         return
+    liberar_firewall_windows()
     my_ip = obter_ip(my_ip, "da Máquina 1 (Seed)")
     banner(f"MÁQUINA 1 (SEED) - IP: {my_ip}")
     if not start_node("cassandra-node1", my_ip, my_ip, mount=True) or not wait_cassandra("cassandra-node1"):
@@ -204,7 +237,7 @@ def subir_pc1(my_ip=None, wait_pc2: bool = True):
     carregar_banco("cassandra-node1")
 
     if wait_pc2:
-        print(f"\n{C_YELLOW}[] Aguardando o PC 2 se juntar ao anel (Ctrl+C para pular)...{C_RESET}")
+        print(f"\n{C_YELLOW}[🤝] Aguardando o PC 2 se juntar ao anel (Ctrl+C para pular)...{C_RESET}")
         start = time.time()
         try:
             while time.time() - start < 90:
@@ -222,9 +255,38 @@ def subir_pc1(my_ip=None, wait_pc2: bool = True):
 def subir_pc2(seed_ip=None, my_ip=None):
     if not check_docker():
         return
+    liberar_firewall_windows()
     my_ip = obter_ip(my_ip, "desta Máquina 2")
     seed_ip = seed_ip or input(f"Informe o IP do Seed (PC 1) [{DEFAULT_SEED_IP}]: ").strip() or DEFAULT_SEED_IP
     banner(f"MÁQUINA 2 - IP: {my_ip} (SEED: {seed_ip})")
+
+    # Pré-verificação de rede: testa se a porta 7000 do Seed está aberta antes de subir
+    print(f"{C_YELLOW}[🔍] Testando conexão com o Seed Node ({seed_ip}:7000)...{C_RESET}")
+    if not testar_porta_tcp(seed_ip, 7000, timeout=3.0):
+        print(f"{C_YELLOW}[!] O Seed Node ({seed_ip}:7000) ainda não está acessível.{C_RESET}")
+        print(f"{C_GRAY}Aguardando o PC 1 terminar de inicializar para evitar queda do container... (Ctrl+C para pular){C_RESET}")
+        start = time.time()
+        seed_online = False
+        try:
+            while time.time() - start < 90:
+                time.sleep(3)
+                if testar_porta_tcp(seed_ip, 7000, timeout=2.0):
+                    seed_online = True
+                    print(f"{C_GREEN}[✔] Seed Node ({seed_ip}:7000) está ONLINE e acessível!{C_RESET}")
+                    break
+                print(f"{C_GRAY}  -> Tentando alcançar {seed_ip}:7000...{C_RESET}")
+        except KeyboardInterrupt:
+            print(f"\n{C_YELLOW}[!] Espera de rede cancelada pelo usuário.{C_RESET}")
+
+        if not seed_online:
+            print(f"{C_RED}[AVISO] Não foi possível conectar ao Seed ({seed_ip}:7000).{C_RESET}")
+            print(f"{C_YELLOW}Verifique se o PC 1 já subiu e se o Firewall do Windows permitiu a porta 7000.{C_RESET}")
+            prosseguir = input("Deseja tentar subir o container mesmo assim? (s/N): ").strip().lower()
+            if prosseguir != "s":
+                return
+    else:
+        print(f"{C_GREEN}[✔] Seed Node ({seed_ip}:7000) acessível com sucesso!{C_RESET}")
+
     if start_node("cassandra-node2", my_ip, seed_ip) and wait_cassandra("cassandra-node2"):
         verificar_conexao("cassandra-node2")
         print(f"\n{C_YELLOW}Consulta de Teste no PC 2:{C_RESET}\ndocker exec -it cassandra-node2 cqlsh localhost 9042 -e \"USE telemetria; SELECT * FROM sensores_iot LIMIT 5;\"\n")
@@ -242,7 +304,7 @@ def subir_local():
 def limpar():
     print(f"{C_YELLOW}Removendo containers...{C_RESET}")
     run_cmd("docker rm -f cassandra-node1 cassandra-node2; docker compose down -v")
-    print(f"{C_GREEN}[[OK]] Limpeza concluída com sucesso!{C_RESET}")
+    print(f"{C_GREEN}[✔] Limpeza concluída com sucesso!{C_RESET}")
 
 
 def menu():

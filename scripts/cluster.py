@@ -270,7 +270,7 @@ def subir_pc2(seed_ip=None, my_ip=None):
         try:
             while time.time() - start < 90:
                 time.sleep(3)
-                if testar_porta_tcp(seed_ip, 7000, timeout=5.0):
+                if testar_porta_tcp(seed_ip, 7000, timeout=2.0):
                     seed_online = True
                     print(f"{C_GREEN}[OK] Seed Node ({seed_ip}:7000) está ONLINE e acessível!{C_RESET}")
                     break

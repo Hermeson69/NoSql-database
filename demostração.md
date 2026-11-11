@@ -83,6 +83,24 @@ SELECT * FROM telemetria.sensores_iot LIMIT 5;
 ```
 *O que este comando faz: Busca e retorna as 5 primeiras linhas gravadas na tabela com todas as suas colunas (temperatura, umidade, status, etc.).*
 
+### 2.3 Listar as Diferentes Classes de Sensores no Banco
+Para visualizar os diferentes sensores (e suas respectivas datas particionadas) armazenados na tabela:
+```sql
+SELECT DISTINCT sensor_id, data_leitura FROM telemetria.sensores_iot;
+```
+*O que este comando faz: Lista as chaves de partição distintas existentes no cluster. Como a chave de partição é composta por `(sensor_id, data_leitura)`, o Cassandra exige que ambas as colunas sejam solicitadas no `SELECT DISTINCT` para identificar as diferentes classes de sensores sem precisar ler todas as linhas de dados.*
+
+### 2.4 Apagar Todos os Registros de uma Classe Específica de Sensor
+Para deletar todas as leituras de um sensor específico (ex: `SALA-SERVIDORES-CORE` ou `SENSOR-SP-001`):
+```sql
+DELETE FROM telemetria.sensores_iot 
+WHERE sensor_id = 'SALA-SERVIDORES-CORE' 
+  AND data_leitura IN ('2026-10-24', '2026-10-25', '2026-10-26');
+```
+*O que este comando faz: Remove todas as linhas pertencentes à classe de sensor informada nos dias registrados. O Cassandra exige todas as colunas da chave de partição no `WHERE` (por isso passamos `sensor_id` e a lista de datas em `data_leitura IN`). Internamente, em vez de apagar na hora do disco, ele grava marcadores chamados **Tombstones** (lápides) para que a exclusão definitiva ocorra na compactação em segundo plano.*
+
+*(Para confirmar que foi apagado, execute: `SELECT COUNT(*) FROM telemetria.sensores_iot WHERE sensor_id = 'SALA-SERVIDORES-CORE' AND data_leitura IN ('2026-10-24', '2026-10-25', '2026-10-26');`)*
+
 ---
 
 ## 2.1 Demonstração com Grande Volume de Dados (50.000 Registros)
@@ -204,15 +222,8 @@ UN  10.215.120.142  119.85 KiB  16      100.0%            e0811b3b-ba9c-42b6-ad7
 * **Status UN:** Comprova que ambos os nós estão Up e Normal.
 * **Tokens e Owns (100.0%):** O anel compartilha a carga igualmente com fator de replicação integral.
 
-### 4.3 Comprovação de Replicação de Dados entre Nós
-1. Insira ou consulte os dados a partir do Computador 1.
-2. No terminal do Computador 2, verifique a presença imediata dos mesmos dados:
-   ```bash
-   docker exec -it cassandra-node2 cqlsh localhost 9042 -e "SELECT count(*) FROM telemetria.sensores_iot;"
-   ```
-   *O que este comando faz: Executa uma consulta direta no segundo computador provando que os dados inseridos no computador 1 foram sincronizados via rede pelo fator de replicação 2.*
 
-### 4.4 Teste de Tolerância a Falhas (Alta Disponibilidade ao Vivo)
+### 4.3 Teste de Tolerância a Falhas (Alta Disponibilidade ao Vivo)
 1. Com o cluster em operação, derrube propositalmente o segundo nó:
    ```bash
    docker stop cassandra-node2

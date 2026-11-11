@@ -67,7 +67,7 @@ def liberar_firewall_windows():
     run_cmd(fw_cmd)
 
 
-def testar_porta_tcp(host: str, port: int, timeout: float = 2.0) -> bool:
+def testar_porta_tcp(host: str, port: int, timeout: float = 120.0) -> bool:
     """Verifica se um endereço e porta TCP estão acessíveis."""
     try:
         with socket.create_connection((host, port), timeout=timeout):
@@ -132,7 +132,7 @@ def container_ativo():
     return next((c for c in ["cassandra-node1", "cassandra-node2"] if c in names), None)
 
 
-def wait_cassandra(container: str, timeout: int = 120) -> bool:
+def wait_cassandra(container: str, timeout: int = 3600) -> bool:
     print(f"\n{C_YELLOW}[AGUARDE] Aguardando JVM do Cassandra inicializar (~35-60s)...{C_RESET}")
     start = time.time()
     try:
@@ -270,7 +270,7 @@ def subir_pc2(seed_ip=None, my_ip=None):
         try:
             while time.time() - start < 90:
                 time.sleep(3)
-                if testar_porta_tcp(seed_ip, 7000, timeout=2.0):
+                if testar_porta_tcp(seed_ip, 7000, timeout=5.0):
                     seed_online = True
                     print(f"{C_GREEN}[OK] Seed Node ({seed_ip}:7000) está ONLINE e acessível!{C_RESET}")
                     break

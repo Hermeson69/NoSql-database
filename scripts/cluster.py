@@ -67,7 +67,7 @@ def liberar_firewall_windows():
     run_cmd(fw_cmd)
 
 
-def testar_porta_tcp(host: str, port: int, timeout: float = 120.0) -> bool:
+def testar_porta_tcp(host: str, port: int, timeout: float = 2.0) -> bool:
     """Verifica se um endereço e porta TCP estão acessíveis."""
     try:
         with socket.create_connection((host, port), timeout=timeout):
